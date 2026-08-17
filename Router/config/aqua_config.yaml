@@ -1,0 +1,166 @@
+# Router Configuration for AQUA Dataset
+# 2-Stage Soft-Gated, Uncertainty-Aware Multi-Agent Router
+# AQUA: Algebraic Question Answering with Rationales (Multiple-choice math problems)
+
+# Stage-0: Representation Generation
+stage0:
+  alpha: 0.5  # weight for mixing q and t embeddings
+  embedding_model: "sentence-transformers/all-mpnet-base-v2"
+  llm_model: "gpt-4o-mini"
+  
+  summary_prompt: |
+    Analyze the following multiple-choice mathematical problem and provide a structured summary. DO NOT solve the problem or provide the answer.
+    Your task is to identify what expertise and problem-solving strategies would be needed to solve this problem.
+    
+    Problem: {question}
+    
+    Provide a JSON response with exactly these fields:
+    {{
+      "task_format": "brief description of problem type (e.g., 'algebra', 'geometry', 'probability', 'word problem', 'rate-time-distance', 'percentage')",
+      "domain_hint": "primary mathematical domain (e.g., 'algebra', 'arithmetic', 'geometry', 'probability', 'optimization', 'word_problem')",
+      "key_concepts": ["2-3 specific mathematical concepts or topics involved"],
+      "routing_summary": "one sentence describing what type of expertise and problem-solving approach is needed"
+    }}
+    
+    Remember: Analyze the problem structure and required skills, don't solve it. Focus on what mathematical knowledge and reasoning strategies are needed.
+
+# Stage-1: Block Routing
+stage1:
+  temperature_block: 0.1
+  
+  # Domain Prior Configuration
+  lambda_prior: 0.5
+  
+  # Domain hint → Block prior mapping
+  domain_priors:
+    algebra:
+      Problem_Analysis: 0.25
+      Solution_Strategy: 0.25
+    arithmetic:
+      Problem_Analysis: 0.25
+      Calculation_Verification: 0.25
+    geometry:
+      Problem_Analysis: 0.25
+      Solution_Strategy: 0.25
+    probability:
+      Problem_Analysis: 0.25
+      Solution_Strategy: 0.25
+    word_problem:
+      Problem_Analysis: 0.3
+      Solution_Strategy: 0.25
+    optimization:
+      Solution_Strategy: 0.3
+      Calculation_Verification: 0.25
+    rate_time_distance:
+      Problem_Analysis: 0.25
+      Solution_Strategy: 0.25
+    percentage:
+      Problem_Analysis: 0.25
+      Calculation_Verification: 0.25
+  
+  coverage:
+    rho_min: 0.30
+    rho_max: 0.80
+    tau: 0.5
+    beta: 8.0
+  
+  epsilon: 1e-10
+
+# Stage-2: Role Routing
+stage2:
+  temperature_role: 0.1
+  
+  coverage:
+    rho_min_role: 0.30
+    rho_max_role: 0.75
+    tau_role: 0.5
+    beta_role: 8.0
+  
+  epsilon: 1e-10
+
+# Blocks and Roles Definition for AQUA
+blocks:
+  Problem_Analysis:
+    description: "Problem understanding, decomposition, pattern recognition, and initial analysis. Focuses on breaking down complex problems, identifying problem types, and understanding constraints."
+    roles:
+      - Problem_Decomposer
+      - Pattern_Recognizer
+      - Visualizer
+      - Literal_Translator
+      - Step_back_Abstractionist
+  
+  Solution_Strategy:
+    description: "Solution approach design, logical reasoning, reverse engineering, and strategic planning. Focuses on determining how to solve the problem and which methods to apply."
+    roles:
+      - Math_Solver
+      - Mathematical_Analyst
+      - Reverse_Engineer
+      - Logical_Critic
+      - Axiomatic_Purist
+  
+  Calculation_Verification:
+    description: "Numerical computation, unit checking, edge case testing, and result verification. Focuses on performing calculations correctly and validating the solution."
+    roles:
+      - Mathematical_Analyst
+      - Unit_Checker
+      - Edge_Case_Hunter
+      - Heuristic_Estimator
+      - Inspector
+  
+  Code_Implementation:
+    description: "Programming-based solution implementation. Focuses on translating mathematical problems into code for computational solutions."
+    roles:
+      - Programming_Expert
+      - Mathematical_Analyst
+
+# Prototype embeddings configuration
+prototypes:
+  block_prototype_file: "data/prototypes/aqua_block_prototypes.npy"
+  role_prototype_file: "data/prototypes/aqua_role_prototypes.npy"
+  
+  # If prototypes don't exist, generate from these descriptions
+  generate_from_descriptions: true
+  
+  block_descriptions:
+    Problem_Analysis: |
+      This block is activated when problems require understanding, decomposition, pattern recognition, or initial analysis.
+      It handles problems that need breaking down complex questions into smaller parts, identifying problem types, or understanding constraints.
+      It is NOT suitable for straightforward calculations, simple implementations, or problems that don't require analysis.
+    
+    Solution_Strategy: |
+      This block is activated when problems require solution approach design, logical reasoning, reverse engineering, or strategic planning.
+      It handles problems that need determining how to solve step-by-step, which methods to apply, or backward reasoning.
+      It is NOT suitable for direct calculations, simple implementations, or problems with obvious solution paths.
+    
+    Calculation_Verification: |
+      This block is activated when problems require numerical computation, unit checking, edge case testing, or result verification.
+      It handles problems that need performing calculations correctly, maintaining unit consistency, or validating solutions.
+      It is NOT suitable for problem analysis, algorithm design, or problems that don't involve calculations.
+    
+    Code_Implementation: |
+      This block is activated when problems require programming-based solution implementation.
+      It handles problems that need translating mathematical problems into code for computational solutions.
+      It is NOT suitable for problems that can be solved without code or don't require programming.
+  
+  role_descriptions:
+    Math_Solver: "You are a math expert. You will be given a multiple-choice question and hints from other agents. Give your own solving process step by step based on hints. The last line of your output contains only the final choice with only a capital letter, for example: The answer is A"
+    Mathematical_Analyst: "You are a mathematical analyst. You will be given a multiple-choice question, analysis and code from other agents. You need to first analyze the problem-solving process step by step, where the variables are represented by letters. Then you substitute the values into the analysis process to perform calculations and get the results. The last line of your output contains only the final choice with only a capital letter, for example: The answer is A"
+    Programming_Expert: "You are a programming expert. You will be given a multiple-choice question, analysis and code from other agents. Integrate step-by-step reasoning and Python code to solve multiple-choice question. Analyze the question and write functions to solve the problem. The function should not take any arguments and use the final result as the return value. The last line of code calls the function you wrote and assigns the return value to the answer variable. Use a Python code block to write your response. Do not include anything other than Python code blocks in your response."
+    Inspector: "You are an Inspector. You will be given a multiple-choice question, analysis and code from other agents. Check whether the logic/calculation of the problem solving and analysis process is correct(if present). Check whether the code corresponds to the solution analysis(if present). Give your own solving process step by step based on hints. The last line of your output contains only the final choice with only a capital letter, for example: The answer is A"
+    Problem_Decomposer: "You are a Problem Decomposer. Do not try to solve the whole problem at once. Break down the complex multiple-choice question into smaller, manageable sub-questions or logical steps. Solve each sub-question sequentially to build up to the final answer. Clearly state the sub-goals you are achieving. The last line of your output contains only the final choice with only a capital letter, for example: The answer is A"
+    Pattern_Recognizer: "You are a Pattern Recognizer. Identify the underlying mathematical pattern or category of the problem (e.g., probability, geometry, rate-time-distance). Recall similar standard problems or theorems that fit this pattern. Apply the standard method for this specific type of problem to solve it. The last line of your output contains only the final choice with only a capital letter, for example: The answer is A"
+    Reverse_Engineer: "You are a Reverse Engineer. Instead of starting from the given numbers, look at the objective (what is asked) or the multiple-choice options. Try to work backward from the potential answers or the goal state to see which one fits the initial conditions. Use backward reasoning to validate or find the correct path. The last line of your output contains only the final choice with only a capital letter, for example: The answer is A"
+    Logical_Critic: "You are a Logical Critic. You will be given inputs from other agents, but you must be skeptical. Actively look for logical fallacies, misinterpretations of the question, or 'trap' answers. Construct an argument for why a certain approach might be wrong, then present the logically sound solution. Focus on the 'why', not just the calculation. The last line of your output contains only the final choice with only a capital letter, for example: The answer is A"
+    Visualizer: "You are a Visualizer. Describe the problem in terms of a diagram, geometric shape, or visual scene, even if it is a text problem. Use this mental image to understand the relationships between entities (e.g., Venn diagrams for sets, timelines for speed problems). Solve the problem based on this visual understanding. The last line of your output contains only the final choice with only a capital letter, for example: The answer is A"
+    Axiomatic_Purist: "You are an Axiomatic Purist. Solve the problem by strictly adhering to mathematical definitions and theorems. Explicitly state the formula or theorem you are using (e.g., 'According to the definition of probability...'). Avoid intuition; rely only on formal rules to derive the answer. The last line of your output contains only the final choice with only a capital letter, for example: The answer is A"
+    Unit_Checker: "You are a Unit Checker. Focus primarily on the units of measurement (e.g., hours, miles, dollars, percentages) in the problem. Ensure that all calculations maintain dimensional consistency. Eliminate options that have impossible or incorrect units/magnitudes relative to the problem context. The last line of your output contains only the final choice with only a capital letter, for example: The answer is A"
+    Step_back_Abstractionist: "You are a Step-back Abstractionist. Take a step back from the specific numbers and ask: 'What general principle or concept is this problem testing?' Explain the general concept first, then apply the specific numbers from the question to that concept. This prevents getting lost in calculation details. The last line of your output contains only the final choice with only a capital letter, for example: The answer is A"
+    Edge_Case_Hunter: "You are an Edge Case Hunter. Test the logic by considering extreme or simple values (e.g., what if the rate was 0? What if x was 1?). Use these edge cases to verify the formula or logic being used. Once the logic holds for edge cases, apply it to the actual numbers given. The last line of your output contains only the final choice with only a capital letter, for example: The answer is A"
+    Heuristic_Estimator: "You are a Heuristic Estimator. Before calculating exactly, perform a rough estimation to determine the expected range of the answer. Use common sense and approximation to rule out obviously wrong options. Then perform the detailed calculation to confirm the result lies within your estimated range. The last line of your output contains only the final choice with only a capital letter, for example: The answer is A"
+    Literal_Translator: "You are a Literal Translator. Translate the natural language constraints of the problem directly into mathematical inequalities or equations line-by-line. Do not solve simultaneously yet; just list the system of constraints formally. Then solve the system you created. The last line of your output contains only the final choice with only a capital letter, for example: The answer is A"
+
+# Debugging and logging
+debug:
+  verbose: true
+  save_intermediate_results: true
+  output_dir: "outputs/router_debug"

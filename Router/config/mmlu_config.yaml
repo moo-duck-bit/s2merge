@@ -1,0 +1,237 @@
+# Router Configuration
+# 2-Stage Soft-Gated, Uncertainty-Aware Multi-Agent Router
+
+# Stage-0: Representation Generation
+stage0:
+  alpha: 0.5  # weight for mixing q and t embeddings (v = α·Embed(q) + (1-α)·Embed(t))
+  embedding_model: "sentence-transformers/all-mpnet-base-v2"  # embedding model
+  llm_model: "gpt-4o-mini"  # LLM for structured summary generation (configured in api_keys.yaml)
+  
+  # LLM prompt template for structured summary
+  summary_prompt: |
+    Analyze the following question and provide a structured summary. DO NOT solve the question or provide the answer.
+    Your task is to identify what expertise would be needed to answer this question.
+    
+    Question: {question}
+    
+    Provide a JSON response with exactly these fields:
+    {{
+      "task_format": "brief description of task type (e.g., 'multiple choice', 'calculation', 'explanation', 'coding')",
+      "domain_hint": "primary domain (e.g., 'mathematics', 'biology', 'computer science', 'history', 'law')",
+      "key_concepts": ["2-3 specific concepts or topics involved"],
+      "routing_summary": "one sentence describing what type of expertise is needed"
+    }}
+    
+    Remember: Analyze the question, don't answer it. Focus on what skills/knowledge are required.
+
+# Stage-1: Block Routing
+stage1:
+  # Temperature for block probability distribution
+  temperature_block: 0.1  # T_B in softmax (lower = sharper distribution)
+  
+  # Domain Prior Configuration (Hybrid Scoring)
+  lambda_prior: 0.5  # Prior strength (λ). Set to 0 for pure embedding baseline
+                     # Determined by ablation study on 50 MMLU questions: 86% accuracy, 27% efficiency gain
+  
+  # Domain hint → Block prior mapping
+  # Format: domain_hint → {block_id: prior_boost}
+  domain_priors:
+    mathematics:
+      MathLogic: 0.3
+    math:
+      MathLogic: 0.3
+    computer_science:
+      CS_Eng_Physics: 0.3
+    computer science:
+      CS_Eng_Physics: 0.3
+    cs:
+      CS_Eng_Physics: 0.3
+    physics:
+      CS_Eng_Physics: 0.25
+    engineering:
+      CS_Eng_Physics: 0.25
+    biology:
+      Bio_Med: 0.3
+    medicine:
+      Bio_Med: 0.3
+    medical:
+      Bio_Med: 0.3
+    health:
+      Bio_Med: 0.25
+    economics:
+      Econ_Law_Social: 0.25
+    law:
+      Econ_Law_Social: 0.3
+    legal:
+      Econ_Law_Social: 0.3
+    business:
+      Econ_Law_Social: 0.2
+    history:
+      Humanities: 0.3
+    philosophy:
+      Humanities: 0.25
+    literature:
+      Humanities: 0.25
+    psychology:
+      Humanities: 0.25
+    sociology:
+      Humanities: 0.2
+    # Multi-domain hints (compound)
+    "mathematics, computer_science":
+      MathLogic: 0.2
+      CS_Eng_Physics: 0.2
+    "biology, medicine":
+      Bio_Med: 0.3
+    "economics, law":
+      Econ_Law_Social: 0.25
+  
+  # Adaptive coverage threshold parameters
+  coverage:
+    rho_min: 0.30  # minimum coverage when certain (single-domain)
+                   # Determined by ablation study on 20 MMLU questions: 90% accuracy, 4.2 agents avg
+    rho_max: 0.80  # maximum coverage when uncertain (cross-domain)
+                   # Determined by ablation study on 20 MMLU questions: 90% accuracy, 4.2 agents avg
+    tau: 0.5       # uncertainty threshold where adaptation starts
+    beta: 8.0      # steepness of sigmoid transition
+  
+  # Uncertainty normalization
+  epsilon: 1e-10  # numerical stability for log in entropy calculation
+
+# Stage-2: Role Routing
+stage2:
+  # Temperature for role probability distribution
+  temperature_role: 0.1  # T_R in softmax (lower = sharper distribution)
+  
+  # Adaptive coverage threshold parameters
+  coverage:
+    rho_min_role: 0.30  # minimum coverage when certain (fewer agents)
+    rho_max_role: 0.75  # maximum coverage when uncertain (more agents)
+    tau_role: 0.5       # uncertainty threshold where adaptation starts
+    beta_role: 8.0      # steepness of sigmoid transition
+  
+  # Uncertainty normalization
+  epsilon: 1e-10  # numerical stability for log in entropy calculation
+
+# Blocks and Roles Definition
+blocks:
+  MathLogic:
+    description: "Mathematics, Logic, Abstract Reasoning"
+    roles:
+      - Abstract_Algebra
+      - Discrete_Math_Combinatorics
+      - Calculus_Linear_Algebra
+      - Probability_Statistics
+  
+  CS_Eng_Physics:
+    description: "Computer Science, Engineering, Physics"
+    roles:
+      - Algorithms_Theory
+      - Systems_Architecture
+      - Security
+      - Machine_Learning
+  
+  Bio_Med:
+    description: "Biology, Medicine, Health Sciences"
+    roles:
+      - Clinical_Medicine
+      - Anatomy_Physiology
+      - Genetics_Molecular_Biology
+      - Virology_Microbiology
+  
+  Econ_Law_Social:
+    description: "Economics, Law, Social Sciences"
+    roles:
+      - Micro_Macro_Economics
+      - Econometrics
+      - Business_Accounting_Ethics
+      - Law_Jurisprudence
+      - International_Law_Policy
+  
+  Humanities:
+    description: "History, Philosophy, Literature, Arts"
+    roles:
+      - Psychology_Cognitive_Science
+      - Sociology_Philosophy_Ethics
+      - History_Religion_Geography
+
+# Prototype embeddings configuration
+prototypes:
+  block_prototype_file: "data/prototypes/block_prototypes.npy"
+  role_prototype_file: "data/prototypes/role_prototypes.npy"
+  
+  # If prototypes don't exist, generate from these descriptions
+  generate_from_descriptions: true
+  
+  block_descriptions:
+    MathLogic: |
+      This block is activated when questions require explicit formulas,
+      symbolic manipulation, numerical derivations, mathematical proofs,
+      or formally provable results.
+      
+      It is NOT suitable for questions based on historical facts,
+      cultural or philosophical interpretation, ethical judgment,
+      legal reasoning, medical diagnosis, or subjective analysis.
+    
+    CS_Eng_Physics: |
+      This block is activated when problems require algorithmic thinking,
+      step-by-step procedures, system-level reasoning, computational models,
+      or explanations based on physical laws.
+      
+      It is NOT suitable for purely interpretive humanities questions,
+      legal judgment, ethical debate, or biological and medical diagnosis
+      without computational or physical reasoning.
+    
+    Bio_Med: |
+      This block is activated for questions involving living systems,
+      biological mechanisms, disease processes, physiological functions,
+      or clinical decision-making.
+      
+      It is NOT suitable for abstract mathematical proofs,
+      algorithmic complexity analysis, historical interpretation,
+      or legal and policy reasoning.
+    
+    Econ_Law_Social: |
+      This block is activated when questions involve incentives,
+      economic modeling, institutional rules, regulations,
+      cost-benefit trade-offs, or formal legal interpretation.
+      
+      It is NOT suitable for numerical mathematical derivations,
+      biological mechanisms, or purely historical or cultural
+      description without institutional context.
+    
+    Humanities: |
+      This block is activated for interpretive, contextual, or historical
+      questions where answers depend on meaning, values, culture,
+      or human understanding rather than formal proofs.
+      
+      It is NOT suitable for mathematical derivations,
+      algorithmic procedures, clinical diagnosis,
+      or technical system analysis.
+  
+  role_descriptions:
+    Abstract_Algebra: "Performs reasoning about algebraic structures such as groups, rings, and fields. Focuses on axioms, structural properties, and homomorphisms rather than computation. Handles problems involving abstract mathematical structures, symmetry, and algebraic proofs."
+    Discrete_Math_Combinatorics: "Handles finite structures, counting problems, graph reasoning, and combinatorial construction problems. Thinks in terms of case decomposition, invariants, and discrete logical development. Specializes in combinatorics, graph theory, number theory, and discrete optimization."
+    Calculus_Linear_Algebra: "Responsible for continuous mathematics, vector spaces, linear transformations, limits, and optimization problems. Activated in problems involving differentiation, integration, matrices, and geometric interpretation. Covers calculus, linear algebra, differential equations, and optimization theory."
+    Probability_Statistics: "Handles uncertainty through probability models and statistical inference. Performs distribution analysis, expectation, variance, hypothesis testing, and risk assessment. Specializes in probability theory, statistical inference, stochastic processes, and data analysis."
+    Algorithms_Theory: "Responsible for algorithm design, time-space complexity analysis, and correctness reasoning. Activated when step-by-step solution strategies or theoretical guarantees are needed. Covers algorithm design paradigms, computational complexity, data structures, and theoretical computer science."
+    Systems_Architecture: "Thinks centered on hardware-software interaction, operating systems, and system structure. Performs reasoning considering performance, scalability, and system constraints. Specializes in computer architecture, operating systems, distributed systems, and system design."
+    Security: "Handles attacker models, vulnerabilities, cryptographic principles, and defense strategies. Activated in situations related to threat analysis, security assumptions, and trust issues. Covers cybersecurity, cryptography, network security, and security protocols."
+    Machine_Learning: "Thinks centered on data-driven modeling and learning paradigms. Handles training-inference processes, generalization, overfitting, and model selection problems. Specializes in machine learning algorithms, deep learning, statistical learning theory, and AI systems."
+    Clinical_Medicine: "Performs diagnosis, treatment selection, and clinical risk assessment. Derives practical conclusions by synthesizing symptoms, risk levels, and medical guidelines. Specializes in clinical diagnosis, patient care, medical decision-making, and evidence-based medicine."
+    Anatomy_Physiology: "Focuses on biological structure and function. Explains how human organs and systems work and interact. Covers human anatomy, organ systems, physiological processes, and homeostasis."
+    Genetics_Molecular_Biology: "Handles gene expression, DNA/RNA processes, and cellular-level regulatory mechanisms. Reasons centered on molecular-level causal relationships. Specializes in genetics, genomics, molecular biology, and cellular mechanisms."
+    Virology_Microbiology: "Handles viruses, bacteria, infection processes, and immune responses. Focuses on pathogen-host interactions and disease transmission mechanisms. Covers virology, bacteriology, immunology, and infectious diseases."
+    Micro_Macro_Economics: "Analyzes individual and macro-level economic behavior. Thinks centered on markets, growth, policy effects, and incentive structures. Covers microeconomic theory, macroeconomic analysis, market mechanisms, and economic policy."
+    Econometrics: "Performs statistical and mathematical analysis on economic data. Responsible for regression analysis, causal inference, and empirical validation. Specializes in econometric methods, statistical modeling, and quantitative economic analysis."
+    Business_Accounting_Ethics: "Handles organizational decision-making, financial judgment, and ethical trade-offs. Considers profitability, accountability, and stakeholder balance together. Covers business strategy, financial accounting, corporate governance, and business ethics."
+    Law_Jurisprudence: "Performs interpretation of legal provisions, case-based reasoning, and norm application. Derives legal conclusions by applying rules and precedents. Specializes in legal reasoning, statutory interpretation, case law analysis, and legal argumentation."
+    International_Law_Policy: "Handles international treaties, global norms, and inter-state policy issues. Analyzes conflicts between national interests and international norms. Covers international law, global governance, diplomatic relations, and international policy."
+    Psychology_Cognitive_Science: "Performs reasoning about human cognition, behavior, and mental processes. Emphasizes experimental results, empirical research, and cognitive mechanisms. Covers cognitive psychology, neuroscience, behavioral science, and mental processes."
+    Sociology_Philosophy_Ethics: "Responsible for interpretive and normative reasoning about social structure, values, and meaning. Focuses on argumentation, ethical principles, and social context rather than empirical measurement. Covers sociological theory, philosophical reasoning, ethical analysis, and value systems."
+    History_Religion_Geography: "Provides reasoning based on temporal, spatial, and cultural contexts. Explains events, beliefs, and human societal development narratively. Covers historical analysis, religious studies, geographical reasoning, and cultural interpretation."
+
+# Debugging and logging
+debug:
+  verbose: true
+  save_intermediate_results: true
+  output_dir: "outputs/router_debug"

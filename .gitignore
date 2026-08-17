@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Secrets / local config
+.env
+*.env
+!template.env
+
+# Experiment artifacts
+result/
+outputs/
+log/
+*.log
+*.out
+
+# Datasets (regenerate with convert_to_jsonl.py / dataset_download.py)
+datasets/gsm8k/
+dataset_load/gsm8k/
+dataset_load/aqua/
+dataset_load/humaneval/
+dataset_load/MultiArith/
+dataset_load/SVAMP/
+datasets/downloads/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

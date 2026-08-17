@@ -1,0 +1,264 @@
+# Router Configuration for HumanEval Dataset
+# 2-Stage Soft-Gated, Uncertainty-Aware Multi-Agent Router
+
+# Stage-0: Representation Generation
+stage0:
+  alpha: 0.5  # weight for mixing q and t embeddings
+  embedding_model: "sentence-transformers/all-mpnet-base-v2"
+  llm_model: "Meta-Llama-3.1-8B-Instruct"  # Use local Llama model for T_sunk tracking
+  
+  summary_prompt: |
+    Analyze the following code generation task and provide a structured summary. DO NOT solve the problem or provide the code.
+    Your task is to identify what expertise would be needed to implement this function.
+    
+    Task: {question}
+    
+    Provide a JSON response with exactly these fields:
+    {{
+      "task_format": "brief description of task type (e.g., 'algorithm design', 'data manipulation', 'string processing', 'mathematical computation')",
+      "domain_hint": "primary domain (e.g., 'algorithm', 'data structure', 'string manipulation', 'mathematics', 'optimization')",
+      "key_concepts": ["2-3 specific concepts or topics involved"],
+      "routing_summary": "one sentence describing what type of expertise is needed"
+    }}
+    
+    Remember: Analyze the task, don't solve it. Focus on what skills/knowledge are required.
+
+# Stage-1: Block Routing
+stage1:
+  temperature_block: 0.1
+  
+  # Domain Prior Configuration
+  lambda_prior: 0.5
+  
+  # Domain hint → Block prior mapping
+  domain_priors:
+    algorithm:
+      Algorithm_Logic: 0.3
+    data_structure:
+      Algorithm_Logic: 0.25
+    string_manipulation:
+      Implementation: 0.3
+    mathematics:
+      Algorithm_Logic: 0.25
+    optimization:
+      Quality_Optimization: 0.3
+    testing:
+      Testing_Validation: 0.3
+    design:
+      Design_Management: 0.3
+  
+  coverage:
+    rho_min: 0.30
+    rho_max: 0.80
+    tau: 0.5
+    beta: 8.0
+  
+  epsilon: 1e-10
+
+# Stage-2: Role Routing
+stage2:
+  temperature_role: 0.1
+  
+  coverage:
+    rho_min_role: 0.30
+    rho_max_role: 0.75
+    tau_role: 0.5
+    beta_role: 8.0
+  
+  epsilon: 1e-10
+
+# Blocks and Roles Definition for HumanEval
+blocks:
+  Algorithm_Logic:
+    description: "Algorithm design, problem decomposition, and logical reasoning"
+    roles:
+      - Algorithm_Designer
+      - Decomposition_Strategist
+      - Complexity_Expert
+  
+  Implementation:
+    description: "Code implementation, programming, and library usage"
+    roles:
+      - Programming_Expert
+      - Library_Guru
+      - Type_Hint_Enforcer
+  
+  Quality_Optimization:
+    description: "Code quality, optimization, security, and best practices"
+    roles:
+      - Code_Reviewer
+      - Complexity_Expert
+      - Security_Specialist
+  
+  Testing_Validation:
+    description: "Testing, debugging, edge cases, and validation"
+    roles:
+      - Test_Analyst
+      - Corner_Case_Detective
+      - Bug_Fixer
+  
+  Design_Management:
+    description: "Project management, design patterns, and specification compliance"
+    roles:
+      - Project_Manager
+      - Spec_Compliance_Officer
+
+# Prototype embeddings configuration
+prototypes:
+  block_prototype_file: "data/prototypes/humaneval_block_prototypes.npy"
+  role_prototype_file: "data/prototypes/humaneval_role_prototypes.npy"
+  
+  generate_from_descriptions: true
+  
+  block_descriptions:
+    Algorithm_Logic: |
+      This block is activated when code generation tasks require algorithm design,
+      problem decomposition, logical reasoning, or computational complexity analysis.
+      
+      It handles problems that need step-by-step algorithmic thinking, recursive solutions,
+      dynamic programming, graph algorithms, or mathematical computations.
+      
+      It is NOT suitable for simple string manipulations, basic data filtering,
+      straightforward library usage, or tasks that only require calling standard functions.
+    
+    Implementation: |
+      This block is activated when tasks require actual code implementation,
+      Python programming, library usage, or type handling.
+      
+      It handles problems involving string processing, list operations, type conversions,
+      standard library functions, and direct code writing.
+      
+      It is NOT suitable for high-level algorithm design, architectural decisions,
+      or tasks that focus on theoretical analysis without implementation.
+    
+    Quality_Optimization: |
+      This block is activated when code quality, performance optimization,
+      security concerns, or best practices are critical.
+      
+      It handles problems requiring code review, complexity analysis, security checks,
+      or optimization of existing solutions.
+      
+      It is NOT suitable for initial implementation tasks, simple one-liner solutions,
+      or problems where correctness is the only concern.
+    
+    Testing_Validation: |
+      This block is activated when testing, debugging, edge case handling,
+      or validation is needed.
+      
+      It handles problems requiring test case generation, bug identification,
+      corner case analysis, or validation of code correctness.
+      
+      It is NOT suitable for initial algorithm design or straightforward implementation
+      without testing requirements.
+    
+    Design_Management: |
+      This block is activated when project structure, design patterns,
+      specification compliance, or overall code organization is important.
+      
+      It handles problems requiring architectural decisions, design pattern application,
+      specification alignment, or project management aspects.
+      
+      It is NOT suitable for simple algorithmic problems, one-function implementations,
+      or tasks that don't require structural design considerations.
+  
+  role_descriptions:
+    Project_Manager: |
+      You are a project manager. You will be given a function signature and its docstring by the user.
+      You are responsible for overseeing the overall structure of the code, ensuring that the code is structured to complete the task.
+      Implement code concisely and correctly without pursuing over-engineering.
+      You need to suggest optimal design patterns to ensure that the code follows best practices for maintainability and flexibility.
+      You can specify the overall design of the code, including the classes that need to be defined (maybe none) and the functions used (maybe only one function).
+      I hope your reply will be more concise. Preferably within fifty words. Don't list too many points.
+    
+    Algorithm_Designer: |
+      You are an algorithm designer. You will be given a function signature and its docstring by the user.
+      You need to specify the specific design of the algorithm, including the classes that may be defined and the functions used.
+      You need to generate the detailed documentation, including explanations of the algorithm, usage instructions, and API references.
+      When the implementation logic is complex, you can give the pseudocode logic of the main algorithm.
+      I hope your reply will be more concise. Preferably within fifty words. Don't list too many points.
+    
+    Programming_Expert: |
+      You are a programming expert. You will be given a function signature and its docstring by the user.
+      You may be able to get the output results of other agents. They may have passed internal tests, but they may not be completely correct.
+      Write your full implementation (restate the function signature).
+      Use a Python code block to write your response. For example:
+      ```python
+      print('Hello world!')
+      ```
+      Do not include anything other than Python code blocks in your response.
+      Do not change function names and input variable types in tasks.
+      Please think step by step.
+    
+    Test_Analyst: |
+      You are a test analyst. You will be given a function signature and its docstring by the user.
+      You need to provide problems in the current code or solution based on the test data and possible test feedback in the question.
+      You need to provide additional special use cases, boundary conditions, etc. that should be paid attention to when writing code.
+      You can point out any potential errors in the code.
+      I hope your reply will be more concise. Preferably within fifty words. Don't list too many points.
+    
+    Bug_Fixer: |
+      You are a bug fixer. You will be given a function signature and its docstring by the user.
+      You need to provide modified and improved python code based on the current overall code design, algorithm framework, code implementation or test problems.
+      Write your full implementation (restate the function signature).
+      Use a Python code block to write your response. For example:
+      ```python
+      print('Hello world!')
+      ```
+      Do not include anything other than Python code blocks in your response.
+      Do not change function names and input variable types in tasks.
+    
+    Code_Reviewer: |
+      You are a code reviewer. You will be given a function signature and its docstring by the user.
+      Do not check for functional correctness. Focus solely on code style, variable naming, and readability (PEP8).
+      Critique if the code is 'Pythonic' or if it looks like a translation from C/Java.
+      I hope your reply will be more concise. Preferably within fifty words. Only point out style issues.
+    
+    Complexity_Expert: |
+      You are a time/space complexity expert. You will be given a function signature and its docstring by the user.
+      Evaluate the Big-O complexity of the provided code.
+      If the solution is O(N^2) but can be solved in O(N), strictly demand an optimization.
+      Identify redundant loops or heavy memory usage.
+      I hope your reply will be more concise. Preferably within fifty words. Focus only on performance.
+    
+    Security_Specialist: |
+      You are a security and robustness specialist. You will be given a function signature and its docstring by the user.
+      Check for potential runtime risks: infinite loops, recursion depth exceeded, or dangerous evaluations (e.g., eval()).
+      Ensure the code handles large inputs without crashing the system.
+      I hope your reply will be more concise. Preferably within fifty words. Focus on safety and robustness.
+    
+    Library_Guru: |
+      You are a Python standard library enthusiast. You will be given a function signature and its docstring by the user.
+      Identify complex logic that can be replaced by a single import (e.g., collections.Counter, itertools.permutations, heapq).
+      Suggest using built-in libraries to reduce code lines and potential bugs.
+      I hope your reply will be more concise. Preferably within fifty words. Suggest standard libraries only.
+    
+    Decomposition_Strategist: |
+      You are a problem decomposition specialist (Chain-of-Thought expert). You will be given a function signature and its docstring by the user.
+      Do not write code. Instead, break down the problem into small, logical sub-steps (Step 1, Step 2...).
+      Identify logical dependencies between steps to guide the programmers.
+      I hope your reply will be more concise. Preferably within fifty words. Output a numbered list of logical steps only.
+    
+    Type_Hint_Enforcer: |
+      You are a Python type system expert (mypy/pyright specialist). You will be given a function signature and its docstring by the user.
+      Verify that input/output types strictly match the type hints (e.g., List[int] vs List[str]).
+      Ensure the code handles Optional, Union, or custom classes correctly to prevent runtime TypeErrors.
+      I hope your reply will be more concise. Preferably within fifty words. Focus solely on type consistency.
+    
+    Spec_Compliance_Officer: |
+      You are a specification alignment officer. You will be given a function signature and its docstring by the user.
+      Compare the English docstring against the code logic.
+      Check for missed subtle constraints (e.g., 'return -1 if empty', 'case-insensitive').
+      Ensure every requirement in the text is implemented in the logic.
+      I hope your reply will be more concise. Preferably within fifty words. Point out missing requirements from the docstring.
+    
+    Corner_Case_Detective: |
+      You are an adversarial testing expert (Fuzzing). You will be given a function signature and its docstring by the user.
+      Do not check normal cases. Propose extreme edge cases: empty inputs, max integers, negative loops, or special characters.
+      Your goal is to find inputs that would break a naive implementation.
+      I hope your reply will be more concise. Preferably within fifty words. List only the trickiest input cases.
+
+# Debugging and logging
+debug:
+  verbose: true
+  save_intermediate_results: true
+  output_dir: "outputs/router_debug"

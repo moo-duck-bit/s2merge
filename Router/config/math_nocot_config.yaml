@@ -1,0 +1,166 @@
+# Router Configuration for Math (No CoT) Dataset
+# 2-Stage Soft-Gated, Uncertainty-Aware Multi-Agent Router
+# Math: General mathematical word problems with numeric answers (no chain-of-thought)
+
+# Stage-0: Representation Generation
+stage0:
+  alpha: 0.5  # weight for mixing q and t embeddings
+  embedding_model: "sentence-transformers/all-mpnet-base-v2"
+  llm_model: "gpt-4o-mini"
+  
+  summary_prompt: |
+    Analyze the following mathematical word problem and provide a structured summary. DO NOT solve the problem or provide the answer.
+    Your task is to identify what expertise and problem-solving strategies would be needed to solve this problem.
+    
+    Problem: {question}
+    
+    Provide a JSON response with exactly these fields:
+    {{
+      "task_format": "brief description of problem type (e.g., 'arithmetic', 'word problem', 'rate-time-distance', 'percentage', 'ratio', 'multi-step calculation', 'geometry')",
+      "domain_hint": "primary mathematical domain (e.g., 'arithmetic', 'word_problem', 'rate_time', 'percentage', 'ratio', 'multi_step', 'geometry')",
+      "key_concepts": ["2-3 specific mathematical concepts or topics involved"],
+      "routing_summary": "one sentence describing what type of expertise and problem-solving approach is needed"
+    }}
+    
+    Remember: Analyze the problem structure and required skills, don't solve it. Focus on what mathematical knowledge and reasoning strategies are needed.
+
+# Stage-1: Block Routing
+stage1:
+  temperature_block: 0.1
+  
+  # Domain Prior Configuration
+  lambda_prior: 0.5
+  
+  # Domain hint → Block prior mapping
+  domain_priors:
+    arithmetic:
+      Problem_Analysis: 0.25
+      Calculation_Verification: 0.25
+    word_problem:
+      Problem_Analysis: 0.3
+      Solution_Strategy: 0.25
+    rate_time:
+      Problem_Analysis: 0.25
+      Solution_Strategy: 0.25
+    percentage:
+      Problem_Analysis: 0.25
+      Calculation_Verification: 0.25
+    ratio:
+      Problem_Analysis: 0.25
+      Solution_Strategy: 0.25
+    multi_step:
+      Problem_Analysis: 0.3
+      Solution_Strategy: 0.25
+    geometry:
+      Problem_Analysis: 0.25
+      Solution_Strategy: 0.25
+    algebra:
+      Problem_Analysis: 0.25
+      Solution_Strategy: 0.25
+  
+  coverage:
+    rho_min: 0.30
+    rho_max: 0.80
+    tau: 0.5
+    beta: 8.0
+  
+  epsilon: 1e-10
+
+# Stage-2: Role Routing
+stage2:
+  temperature_role: 0.1
+  
+  coverage:
+    rho_min_role: 0.30
+    rho_max_role: 0.75
+    tau_role: 0.5
+    beta_role: 8.0
+  
+  epsilon: 1e-10
+
+# Blocks and Roles Definition for Math (No CoT)
+blocks:
+  Problem_Analysis:
+    description: "Problem understanding, decomposition, pattern recognition, and initial analysis. Focuses on breaking down complex word problems, identifying problem types, and understanding relationships between quantities."
+    roles:
+      - Problem_Decomposer
+      - Pattern_Recognizer
+      - Visualizer
+      - Literal_Translator
+      - Step_back_Abstractionist
+  
+  Solution_Strategy:
+    description: "Solution approach design, logical reasoning, reverse engineering, and strategic planning. Focuses on determining how to solve the problem step-by-step and which methods to apply."
+    roles:
+      - Math_Solver
+      - Mathematical_Analyst
+      - Reverse_Engineer
+      - Logical_Critic
+      - Axiomatic_Purist
+  
+  Calculation_Verification:
+    description: "Numerical computation, unit checking, edge case testing, and result verification. Focuses on performing calculations correctly, maintaining unit consistency, and validating the solution."
+    roles:
+      - Mathematical_Analyst
+      - Unit_Checker
+      - Edge_Case_Hunter
+      - Heuristic_Estimator
+      - Inspector
+  
+  Code_Implementation:
+    description: "Programming-based solution implementation. Focuses on translating mathematical word problems into code for computational solutions."
+    roles:
+      - Programming_Expert
+      - Mathematical_Analyst
+
+# Prototype embeddings configuration
+prototypes:
+  block_prototype_file: "data/prototypes/math_nocot_block_prototypes.npy"
+  role_prototype_file: "data/prototypes/math_nocot_role_prototypes.npy"
+  
+  # If prototypes don't exist, generate from these descriptions
+  generate_from_descriptions: true
+  
+  block_descriptions:
+    Problem_Analysis: |
+      This block is activated when problems require understanding, decomposition, pattern recognition, or initial analysis.
+      It handles problems that need breaking down complex word problems into smaller parts, identifying problem types, or understanding relationships between quantities.
+      It is NOT suitable for straightforward calculations, simple implementations, or problems that don't require analysis.
+    
+    Solution_Strategy: |
+      This block is activated when problems require solution approach design, logical reasoning, reverse engineering, or strategic planning.
+      It handles problems that need determining how to solve step-by-step, which methods to apply, or backward reasoning.
+      It is NOT suitable for direct calculations, simple implementations, or problems with obvious solution paths.
+    
+    Calculation_Verification: |
+      This block is activated when problems require numerical computation, unit checking, edge case testing, or result verification.
+      It handles problems that need performing calculations correctly, maintaining unit consistency, or validating solutions.
+      It is NOT suitable for problem analysis, algorithm design, or problems that don't involve calculations.
+    
+    Code_Implementation: |
+      This block is activated when problems require programming-based solution implementation.
+      It handles problems that need translating mathematical word problems into code for computational solutions.
+      It is NOT suitable for problems that can be solved without code or don't require programming.
+  
+  role_descriptions:
+    Math_Solver: "You are a math expert. You will be given a math problem. The last line of your output contains only the final result without any units, for example: The answer is 140"
+    Mathematical_Analyst: "You are a mathematical analyst. You will be given a math problem, analysis and code from other agents. You need to first analyze the problem-solving process step by step, where the variables are represented by letters. Then you substitute the values into the analysis process to perform calculations and get the results. The last line of your output contains only the final result without any units, for example: The answer is 140. You will be given some examples you may refer to."
+    Programming_Expert: "You are a programming expert. You will be given a math problem, analysis and code from other agents. Integrate step-by-step reasoning and Python code to solve math problems. Analyze the question and write functions to solve the problem. The function should not take any arguments and use the final result as the return value. The last line of code calls the function you wrote and assigns the return value to the answer variable. Use a Python code block to write your response. Do not include anything other than Python code blocks in your response. You will be given some examples you may refer to."
+    Inspector: "You are an Inspector. You will be given a math problem, analysis and code from other agents. Check whether the logic/calculation of the problem solving and analysis process is correct(if present). Check whether the code corresponds to the solution analysis(if present). Give your own solving process step by step based on hints. The last line of your output contains only the final result without any units, for example: The answer is 140. You will be given some examples you may refer to."
+    Problem_Decomposer: "You are a Problem Decomposer. Do not try to solve the whole problem at once. Break down the complex math problem into smaller, manageable sub-questions or logical steps. Solve each sub-question sequentially to build up to the final answer. The last line of your output contains only the final result without any units, for example: The answer is 140"
+    Pattern_Recognizer: "You are a Pattern Recognizer. Identify the underlying mathematical pattern or category of the problem (e.g., arithmetic series, probability, geometry). Recall similar standard problems or theorems that fit this pattern. Apply the standard method for this specific type of problem to solve it. The last line of your output contains only the final result without any units, for example: The answer is 140"
+    Reverse_Engineer: "You are a Reverse Engineer. Instead of starting strictly from the given numbers, look at what is being asked (the goal). Work backward from the goal or check constraints to see which value fits the initial conditions. The last line of your output contains only the final result without any units, for example: The answer is 140"
+    Logical_Critic: "You are a Logical Critic. Actively look for potential logical fallacies, misinterpretations of the question, or common traps in the problem statement. Construct an argument for the correct path by critiquing potential wrong turns. The last line of your output contains only the final result without any units, for example: The answer is 140"
+    Visualizer: "You are a Visualizer. Describe the problem in terms of a diagram, geometric shape, or visual scene to extract spatial or structural relationships. Solve the problem based on this visual understanding of the entities. The last line of your output contains only the final result without any units, for example: The answer is 140"
+    Axiomatic_Purist: "You are an Axiomatic Purist. Solve the problem by strictly adhering to mathematical definitions, axioms, and theorems. Avoid intuition; rely only on formal rules to derive the answer step-by-step. The last line of your output contains only the final result without any units, for example: The answer is 140"
+    Unit_Checker: "You are a Unit Checker. Focus on the units and dimensions (e.g., length, time, weight) in the problem to ensure consistency. Perform the calculation ensuring all units match throughout the process. The last line of your output contains only the final result without any units, for example: The answer is 140"
+    Step_back_Abstractionist: "You are a Step-back Abstractionist. First, identify the high-level general math principle or formula required (Abstraction). Then, apply the specific numbers from the question to that principle to solve it (Instantiation). The last line of your output contains only the final result without any units, for example: The answer is 140"
+    Edge_Case_Hunter: "You are an Edge Case Hunter. Test the logic of the problem by considering edge cases (e.g., what if x=0, x=1, or x is negative?) to verify the method. Apply the robust logic verified by these checks to the actual numbers. The last line of your output contains only the final result without any units, for example: The answer is 140"
+    Heuristic_Estimator: "You are a Heuristic Estimator. Perform a rough estimation or use common sense to identify the probable range of the answer first. Then perform the precise calculation, ensuring the result aligns with your estimation. The last line of your output contains only the final result without any units, for example: The answer is 140"
+    Literal_Translator: "You are a Literal Translator. Translate the natural language problem directly into formal mathematical equations or expressions line-by-line. Solve the resulting system of equations. The last line of your output contains only the final result without any units, for example: The answer is 140"
+
+# Debugging and logging
+debug:
+  verbose: true
+  save_intermediate_results: true
+  output_dir: "outputs/router_debug"
