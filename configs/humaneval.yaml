@@ -1,0 +1,145 @@
+# Router configuration for HumanEval function synthesis.
+#
+# Role ids are the role names of s2rmerge.mas.prompts.humaneval verbatim.
+
+name: humaneval
+prototype_prefix: humaneval
+
+stage0:
+  # v = alpha * Embed(q) + (1 - alpha) * Embed(t)
+  alpha: 0.5
+  embedding_model: "sentence-transformers/all-mpnet-base-v2"
+  llm_model: "Meta-Llama-3.1-8B-Instruct"
+
+  summary_prompt: |
+    Analyze the following code generation task and provide a structured summary. DO NOT solve the problem or provide the code.
+    Your task is to identify what expertise would be needed to implement this function.
+
+    Task: {question}
+
+    Provide a JSON response with exactly these fields:
+    {{
+      "task_format": "brief description of task type (e.g., 'algorithm design', 'data manipulation', 'string processing', 'mathematical computation')",
+      "domain_hint": "primary domain (e.g., 'algorithm', 'data structure', 'string manipulation', 'mathematics', 'optimization')",
+      "key_concepts": ["2-3 specific concepts or topics involved"],
+      "routing_summary": "one sentence describing what type of expertise is needed"
+    }}
+
+    Remember: analyze the task, do not solve it.
+
+stage1:
+  temperature_block: 0.1
+
+  lambda_prior: 0.5
+  domain_priors:
+    algorithm:
+      Algorithm_Logic: 0.3
+    data_structure:
+      Algorithm_Logic: 0.25
+    string_manipulation:
+      Implementation: 0.3
+    mathematics:
+      Algorithm_Logic: 0.25
+    optimization:
+      Quality_Optimization: 0.3
+    testing:
+      Testing_Validation: 0.3
+    design:
+      Design_Management: 0.3
+
+  coverage:
+    rho_min: 0.30
+    rho_max: 0.80
+    tau: 0.5
+    kappa: 8.0
+
+  epsilon: 1.0e-10
+
+stage2:
+  temperature_role: 0.1
+
+  coverage:
+    rho_min_role: 0.30
+    rho_max_role: 0.75
+    tau_role: 0.5
+    kappa_role: 8.0
+
+  epsilon: 1.0e-10
+
+blocks:
+  Algorithm_Logic:
+    description: >
+      Algorithm design, problem decomposition and complexity reasoning.
+    roles:
+      - Algorithm Designer
+      - Decomposition Strategist
+      - Complexity Expert
+
+  Implementation:
+    description: >
+      Writing the code itself: language features, standard library usage and
+      type annotations.
+    roles:
+      - Programming Expert
+      - Library Guru
+      - Type Hint Enforcer
+
+  Quality_Optimization:
+    description: >
+      Code quality, efficiency, security and adherence to good practice.
+    roles:
+      - Code Reviewer
+      - Complexity Expert
+      - Security Specialist
+
+  Testing_Validation:
+    description: >
+      Testing, debugging, edge cases and validating behaviour against the
+      docstring examples.
+    roles:
+      - Test Analyst
+      - Corner Case Detective
+      - Bug Fixer
+
+  Design_Management:
+    description: >
+      Overall structure, design patterns and compliance with the stated
+      specification.
+    roles:
+      - Project Manager
+      - Spec Compliance Officer
+
+role_descriptions:
+  Project Manager: >
+    Decides the overall shape of the solution — which functions and classes
+    exist — without over-engineering it.
+  Algorithm Designer: >
+    Specifies the algorithm and, where the logic is involved, its pseudocode.
+    Suited to tasks with non-obvious procedures.
+  Programming Expert: >
+    Writes the implementation. The default choice for any synthesis task.
+  Test Analyst: >
+    Derives test cases from the docstring and checks candidate implementations
+    against them.
+  Bug Fixer: >
+    Diagnoses why a candidate implementation fails and repairs it.
+  Code Reviewer: >
+    Reviews readability, naming and structure, and flags fragile constructs.
+  Complexity Expert: >
+    Reasons about time and space complexity. Suited to tasks with large inputs
+    or an efficiency requirement.
+  Security Specialist: >
+    Flags unsafe input handling, injection risks and unchecked operations.
+  Library Guru: >
+    Selects the right standard-library facility instead of reimplementing it.
+  Decomposition Strategist: >
+    Breaks a compound specification into helper functions solved in order.
+  Type Hint Enforcer: >
+    Gets the signature and type annotations right, including edge types such as
+    optionals and empty collections.
+  Spec Compliance Officer: >
+    Checks the implementation against every clause of the docstring, including
+    the examples.
+  Corner Case Detective: >
+    Hunts for empty inputs, boundary values and degenerate cases the happy path
+    misses.

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "s2rmerge"
+version = "1.0.0"
+description = "Soft-gated routing with structural node merge optimization for LLM multi-agent systems"
+requires-python = ">=3.10"
+dynamic = ["dependencies"]
+
+[project.scripts]
+s2rmerge = "s2rmerge.cli:main"
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.packages.find]
+include = ["s2rmerge*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["error::DeprecationWarning:s2rmerge.*"]

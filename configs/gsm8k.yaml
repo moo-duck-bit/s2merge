@@ -1,0 +1,173 @@
+# Router configuration for grade-school math word problems.
+# Shared by GSM8K, MultiArith and SVAMP, which use the same role pool.
+#
+# Role ids are the role names of s2rmerge.mas.prompts.gsm8k verbatim, and the
+# pipeline checks that correspondence on startup.
+
+name: gsm8k
+prototype_prefix: gsm8k
+
+stage0:
+  # v = alpha * Embed(q) + (1 - alpha) * Embed(t)
+  alpha: 0.5
+  embedding_model: "sentence-transformers/all-mpnet-base-v2"
+  llm_model: "Meta-Llama-3.1-8B-Instruct"
+
+  summary_prompt: |
+    Analyze the following grade school math word problem and provide a structured summary. DO NOT solve the problem or provide the answer.
+    Your task is to identify what expertise and problem-solving strategies would be needed to solve this problem.
+
+    Problem: {question}
+
+    Provide a JSON response with exactly these fields:
+    {{
+      "task_format": "brief description of problem type (e.g., 'arithmetic', 'word problem', 'rate-time-distance', 'percentage', 'ratio', 'multi-step calculation')",
+      "domain_hint": "primary mathematical domain (e.g., 'arithmetic', 'word_problem', 'rate_time', 'percentage', 'ratio', 'multi_step')",
+      "key_concepts": ["2-3 specific mathematical concepts or topics involved"],
+      "routing_summary": "one sentence describing what type of expertise and problem-solving approach is needed"
+    }}
+
+    Remember: analyze the problem structure and required skills, do not solve it.
+
+stage1:
+  temperature_block: 0.1
+
+  # Weight of the domain-hint prior relative to embedding similarity.
+  lambda_prior: 0.5
+  domain_priors:
+    arithmetic:
+      Problem_Analysis: 0.25
+      Calculation_Verification: 0.25
+    word_problem:
+      Problem_Analysis: 0.3
+      Solution_Strategy: 0.25
+    rate_time:
+      Problem_Analysis: 0.25
+      Solution_Strategy: 0.25
+    percentage:
+      Problem_Analysis: 0.25
+      Calculation_Verification: 0.25
+    ratio:
+      Problem_Analysis: 0.25
+      Solution_Strategy: 0.25
+    multi_step:
+      Problem_Analysis: 0.3
+      Solution_Strategy: 0.25
+    geometry:
+      Problem_Analysis: 0.25
+      Solution_Strategy: 0.25
+
+  coverage:
+    rho_min: 0.30
+    rho_max: 0.80
+    tau: 0.5
+    kappa: 8.0
+
+  epsilon: 1.0e-10
+
+stage2:
+  temperature_role: 0.1
+
+  coverage:
+    rho_min_role: 0.30
+    rho_max_role: 0.75
+    tau_role: 0.5
+    kappa_role: 8.0
+
+  epsilon: 1.0e-10
+
+blocks:
+  Problem_Analysis:
+    description: >
+      Problem understanding, decomposition, pattern recognition and initial
+      analysis. Breaking down complex word problems, identifying problem types,
+      and understanding relationships between quantities.
+    roles:
+      - Problem Decomposer
+      - Pattern Recognizer
+      - Visualizer
+      - Literal Translator
+      - Step-back Abstractionist
+
+  Solution_Strategy:
+    description: >
+      Solution design, logical reasoning, backward reasoning and strategic
+      planning. Determining how to solve the problem step by step and which
+      methods to apply.
+    roles:
+      - Math Solver
+      - Mathematical Analyst
+      - Reverse Engineer
+      - Logical Critic
+      - Axiomatic Purist
+
+  Calculation_Verification:
+    description: >
+      Numerical computation, unit checking, edge-case testing and result
+      verification. Performing calculations correctly, keeping units
+      consistent, and validating the solution.
+    roles:
+      - Mathematical Analyst
+      - Unit Checker
+      - Edge Case Hunter
+      - Heuristic Estimator
+      - Inspector
+
+  Code_Implementation:
+    description: >
+      Programming-based solution. Translating a mathematical word problem into
+      code and computing the answer.
+    roles:
+      - Programming Expert
+      - Mathematical Analyst
+
+# Embedded to form the role prototypes Stage-2 scores against. These describe
+# when a role is the right choice, which is not the same thing as the system
+# prompt the agent is given at run time.
+role_descriptions:
+  Math Solver: >
+    Solves the problem directly, step by step, taking other agents' final
+    answers as numeric hints. The default choice for a straightforward problem.
+  Mathematical Analyst: >
+    Derives the solution symbolically first, with quantities as letters, then
+    substitutes the numbers. Suited to problems whose structure matters more
+    than the arithmetic.
+  Programming Expert: >
+    Writes Python that computes the answer. Suited to problems with heavy or
+    repetitive arithmetic, or an explicit procedure to simulate.
+  Inspector: >
+    Checks another agent's reasoning and code for errors before producing its
+    own answer. A verifier rather than a first solver.
+  Problem Decomposer: >
+    Splits a complex problem into ordered sub-questions and solves them in
+    sequence. Suited to long multi-step problems.
+  Pattern Recognizer: >
+    Identifies the standard problem type — arithmetic series, ratio,
+    rate-time-distance — and applies the known method for it.
+  Reverse Engineer: >
+    Works backward from the quantity being asked for to the given conditions.
+    Suited to problems that are awkward to set up forwards.
+  Logical Critic: >
+    Looks for misreadings of the question, logical traps and fallacies, then
+    gives the sound solution. Suited to problems with deceptive wording.
+  Visualizer: >
+    Describes the problem as a diagram, timeline or geometric scene and reads
+    the relationships off that. Suited to spatial or temporal problems.
+  Axiomatic Purist: >
+    Derives the answer strictly from definitions and arithmetic rules, naming
+    each operation used. Suited to problems where rigour matters.
+  Unit Checker: >
+    Tracks units and dimensional consistency — hours against minutes, dollars
+    against counts. Suited to problems mixing measures.
+  Step-back Abstractionist: >
+    States the general principle the problem tests before applying the specific
+    numbers. Suited to problems that look harder than the concept behind them.
+  Edge Case Hunter: >
+    Tests the chosen logic on extreme or degenerate values to confirm it is
+    robust, then applies it. Suited to problems with boundary conditions.
+  Heuristic Estimator: >
+    Estimates the order of magnitude of the answer first and uses it to sanity
+    check the exact calculation.
+  Literal Translator: >
+    Translates each sentence into an equation, then solves the resulting
+    system. Suited to problems with several interlocking conditions.

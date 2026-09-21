@@ -1,0 +1,202 @@
+# Router configuration for MMLU.
+#
+# MMLU spans 57 subjects, organised here as five domain blocks with three
+# specialists each. Role ids are the role names of s2rmerge.mas.prompts.mmlu
+# verbatim.
+
+name: mmlu
+prototype_prefix: mmlu
+
+stage0:
+  # v = alpha * Embed(q) + (1 - alpha) * Embed(t)
+  alpha: 0.5
+  embedding_model: "sentence-transformers/all-mpnet-base-v2"
+  llm_model: "Meta-Llama-3.1-8B-Instruct"
+
+  summary_prompt: |
+    Analyze the following question and provide a structured summary. DO NOT solve the question or provide the answer.
+    Your task is to identify what expertise would be needed to answer this question.
+
+    Question: {question}
+
+    Provide a JSON response with exactly these fields:
+    {{
+      "task_format": "brief description of task type (e.g., 'multiple choice', 'calculation', 'explanation', 'coding')",
+      "domain_hint": "primary domain (e.g., 'mathematics', 'biology', 'computer science', 'history', 'law')",
+      "key_concepts": ["2-3 specific concepts or topics involved"],
+      "routing_summary": "one sentence describing what type of expertise is needed"
+    }}
+
+    Remember: analyze the question, do not answer it.
+
+stage1:
+  temperature_block: 0.1
+
+  lambda_prior: 0.5
+  domain_priors:
+    mathematics:
+      MathLogic: 0.3
+    math:
+      MathLogic: 0.3
+    statistics:
+      MathLogic: 0.3
+    logic:
+      MathLogic: 0.3
+    computer_science:
+      CS_Eng_Physics: 0.3
+    computer science:
+      CS_Eng_Physics: 0.3
+    cs:
+      CS_Eng_Physics: 0.3
+    physics:
+      CS_Eng_Physics: 0.25
+    engineering:
+      CS_Eng_Physics: 0.25
+    biology:
+      Bio_Med: 0.3
+    medicine:
+      Bio_Med: 0.3
+    medical:
+      Bio_Med: 0.3
+    chemistry:
+      Bio_Med: 0.25
+    health:
+      Bio_Med: 0.25
+    economics:
+      Econ_Law_Social: 0.25
+    law:
+      Econ_Law_Social: 0.3
+    legal:
+      Econ_Law_Social: 0.3
+    politics:
+      Econ_Law_Social: 0.25
+    business:
+      Econ_Law_Social: 0.2
+    history:
+      Humanities: 0.3
+    philosophy:
+      Humanities: 0.25
+    literature:
+      Humanities: 0.25
+    psychology:
+      Humanities: 0.25
+    sociology:
+      Humanities: 0.25
+
+  coverage:
+    rho_min: 0.30
+    rho_max: 0.80
+    tau: 0.5
+    kappa: 8.0
+
+  epsilon: 1.0e-10
+
+stage2:
+  temperature_role: 0.1
+
+  coverage:
+    rho_min_role: 0.30
+    rho_max_role: 0.75
+    tau_role: 0.5
+    kappa_role: 8.0
+
+  epsilon: 1.0e-10
+
+blocks:
+  MathLogic:
+    description: >
+      Questions that turn on formulas, symbolic manipulation, numerical
+      derivation, proof or formally checkable reasoning. Not for questions
+      resting on historical fact, interpretation, ethical judgement, legal
+      reasoning or clinical diagnosis.
+    roles:
+      - Mathematician
+      - Statistician
+      - Formal Logician
+
+  CS_Eng_Physics:
+    description: >
+      Questions needing algorithmic thinking, step-by-step procedures,
+      system-level reasoning, computational models or physical law. Not for
+      interpretive humanities questions, legal judgement or clinical diagnosis.
+    roles:
+      - Computer Scientist
+      - Engineer
+      - Physicist
+
+  Bio_Med:
+    description: >
+      Questions about living systems, biological mechanism, disease processes,
+      physiology, chemistry or clinical decision-making. Not for abstract
+      proofs, complexity analysis or historical interpretation.
+    roles:
+      - Biologist
+      - Clinician
+      - Chemist
+
+  Econ_Law_Social:
+    description: >
+      Questions about incentives, economic models, institutions, regulation,
+      cost-benefit trade-offs or legal interpretation. Not for numerical
+      derivation, biological mechanism or purely cultural description.
+    roles:
+      - Economist
+      - Legal Scholar
+      - Political Scientist
+
+  Humanities:
+    description: >
+      Interpretive, contextual or historical questions whose answers turn on
+      meaning, values, culture or human understanding rather than formal proof.
+      Not for mathematical derivation, algorithmic procedure or diagnosis.
+    roles:
+      - Historian
+      - Philosopher
+      - Psychologist
+
+role_descriptions:
+  Mathematician: >
+    Reasons from definitions, theorems and exact calculation. Suited to
+    algebra, calculus, number theory and formal proof.
+  Statistician: >
+    Reasons about distributions, sampling, inference and uncertainty. Suited to
+    probability, statistics and questions with base-rate or confounding traps.
+  Formal Logician: >
+    Restates a question as premises and a conclusion and checks validity.
+    Suited to formal logic and fallacy identification.
+  Computer Scientist: >
+    Reasons about algorithms, data structures, computability and complexity.
+    Suited to programming, theory of computation and machine learning.
+  Engineer: >
+    Reasons from physical constraints, tolerances and design practice. Suited
+    to electrical, mechanical and systems engineering.
+  Physicist: >
+    Reasons from governing laws, conservation principles and limiting cases.
+    Suited to mechanics, electromagnetism and thermodynamics.
+  Biologist: >
+    Reasons across molecular, cellular and organism scales. Suited to genetics,
+    molecular biology, virology and ecology.
+  Clinician: >
+    Works from presentation to differential diagnosis. Suited to anatomy,
+    physiology, clinical medicine and professional medical questions.
+  Chemist: >
+    Reasons about structure, reactivity, stoichiometry and thermodynamics.
+    Suited to general, organic and physical chemistry.
+  Economist: >
+    Reasons about incentives, marginal effects, equilibrium and trade-offs.
+    Suited to micro- and macroeconomics, econometrics and accounting.
+  Legal Scholar: >
+    Applies a governing rule element by element to the facts. Suited to
+    jurisprudence, international law and professional legal questions.
+  Political Scientist: >
+    Reasons about institutions, actors' incentives and the empirical record.
+    Suited to government, public policy and security.
+  Historian: >
+    Places a question in its period and checks chronology and causation.
+    Suited to world and regional history, religion and geography.
+  Philosopher: >
+    Clarifies the concepts at stake and reconstructs the strongest argument on
+    each side. Suited to philosophy, logic of arguments and moral reasoning.
+  Psychologist: >
+    Reasons from established findings in cognition, development and behaviour.
+    Suited to psychology, cognitive science and sociology.

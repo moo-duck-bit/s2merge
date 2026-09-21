@@ -2,10 +2,6 @@
 
 <img width="1406" height="529" alt="figure1_3" src="https://github.com/user-attachments/assets/6eb4f78f-cfaf-44a7-80ea-b30cc42bc8be" />
 
-
-
-
-
 Route, then merge — an efficiency framework for LLM multi-agent collaboration.
 
 A two-stage router picks a query-relevant agent subset instead of running the full pool,
@@ -28,6 +24,7 @@ rather than deleting it, so the communication graph shrinks without losing the r
 ## How it works
 
 **Router** — selects agents from query semantics, not a fixed Top-K.
+[`s2rmerge/router/`](s2rmerge/router)
 
 1. **Stage-0** · An LLM writes a structured summary $t$ of the query (never an answer). One
    mixed embedding $\mathbf{v} = \alpha \cdot \mathrm{Embed}(q) + (1-\alpha) \cdot \mathrm{Embed}(t)$
@@ -40,17 +37,21 @@ rather than deleting it, so the communication graph shrinks without losing the r
 
 **Node merge** — the selected agents form a communication graph whose edge weights are
 learned by policy gradient (LLM outputs are non-differentiable).
+[`s2rmerge/merge/`](s2rmerge/merge), [`s2rmerge/mas/graph.py`](s2rmerge/mas/graph.py)
 
-4. **Target** · A transition-efficiency score $\Delta W(c)$ contrasts each node's incoming
-   against its outgoing learned edge weights. A node whose incoming signal dominates
-   absorbs information without passing it on — a structural bottleneck. Exactly one node is
-   merged per step; no ratio or threshold to tune.
+4. **Target** · A transfer-efficiency score
+
+   $$\Delta W(c) = \frac{\sum w_{in}}{\mathrm{Var}(w_{in}) + \epsilon} - \frac{\sum w_{out}}{\mathrm{Var}(w_{out}) + \epsilon}$$
+
+   contrasts each node's stable incoming signal against its stable outgoing one. A node
+   whose incoming signal dominates absorbs information without passing it on — a structural
+   bottleneck. Exactly one node is merged per step; no ratio or threshold to tune.
 5. **Partner** · The connected node with the strongest learned interaction,
    $S(c^{*},j) = \max(\tilde{A}_{j,c^{*}}, \tilde{A}_{c^{*},j})$.
 6. **Absorb** · An LLM folds the target's role into the partner's prompt (~331 prompt / ~91
-   completion tokens per merge); the target and its edges are removed.
-7. **Prune** · Merging invalidates the learned weights, so the graph is re-optimized and
-   low-importance edges are dropped.
+   completion tokens per merge); the target and all its edges are removed.
+7. **Prune** · Merging invalidates the learned weights, so the graph is re-optimized and the
+   lowest-weight edges are dropped.
 
 Confining all of this to the router-selected subgraph cuts learnable edge parameters from
 $O(N^2)$ over the full pool to $O(k^2)$, $k \ll N$.
@@ -87,9 +88,8 @@ efficiency**: adding it moves accuracy 92.28 → 92.37 while prompt tokens fall 
 
 ```bash
 pip install -r requirements.txt
-cp template.env .env                        # set LLAMA_MODEL_ID / API keys
-python convert_to_jsonl.py                  # GSM8K
-python dataset_download.py --dataset all    # the rest
+cp template.env .env                    # set LLAMA_MODEL_ID / API keys
+python scripts/download_datasets.py     # all six benchmarks into data/
 ```
 
 Llama runs against a local vLLM server; `LLAMA_MODEL_ID` must match the `--model` string
@@ -97,26 +97,70 @@ vLLM was launched with.
 
 ```bash
 vllm serve meta-llama/Llama-3.1-8B-Instruct --port 6789 --max-model-len 8192
-python run_experiment_gsm8k.py --llm_name "Meta-Llama-3.1-8B-Instruct" \
-    --num_iterations 10 --merge_iterations 5 --batch_size 20
 ```
 
-Results land in `result/<run>/` with accuracy, the router/inference token split, and the
-full agent transcript.
+```bash
+python -m s2rmerge gsm8k --llm Meta-Llama-3.1-8B-Instruct
+```
+
+Each benchmark carries its reported communication rounds and merge depth, so the command
+above reproduces the main-table setting with no extra flags. One entry point covers every
+ablation in the paper:
+
+| | |
+|---|---|
+| `python -m s2rmerge gsm8k --no-router` | w/o Router ablation (RESULTS §3) |
+| `python -m s2rmerge gsm8k --no-fusion` | concatenation instead of fusion (§5) |
+| `python -m s2rmerge gsm8k --no-router --topology Layered` | topology robustness (§6) |
+| `python -m s2rmerge aqua --merge-iterations 3` | override the merge depth (§7) |
+
+Each run writes `results/<benchmark>_<timestamp>/` with `report.json` — the score, the
+merges performed, and prompt/completion tokens split by pipeline stage — plus the full
+agent transcript. `python -m s2rmerge --help` lists the rest.
 
 ## Layout
 
 ```
-Router/src/          stage0.py · stage1.py · stage2.py · llm_client.py
-Router/config/       α, λ, temperature, coverage thresholds, block & role definitions
-AgentDropout/        communication-graph MAS (see below)
-experiments/         ΔW scoring, partner selection, absorption merge
-run_experiment_*.py  end-to-end route → merge → prune → evaluate, per dataset
+s2rmerge/
+  cli.py            one entry point for every benchmark and ablation
+  pipeline.py       route -> optimize -> merge -> prune -> evaluate
+  accounting.py     per-stage token and cost ledger
+  answers.py        parsing final answers out of free-form responses
+  topology.py       initial communication topologies
+  router/           stage0 (representation), stage1 (blocks), stage2 (roles)
+  merge/            criterion (deltaW, partner), fusion (prompt-level), operator
+  mas/              communication graph, agents, prompts, LLM backends
+  benchmarks/       the six datasets, their agent setup and scoring
+configs/            per-benchmark router config: alpha, lambda, temperatures,
+                    coverage bounds, block and role definitions
+prototypes/         cached block/role prototype embeddings (generated on first run)
+tests/              merge criterion, routing rules, accounting, answer parsing
 ```
+
+Roles carry the same names in `configs/*.yaml` and in the matching prompt set, and the
+pipeline checks that correspondence at startup.
+
+## Implementation notes
+
+- **Routing is per query.** Queries that land on the same agent set share one graph,
+  which is what makes policy-gradient optimization over a fixed node set well defined.
+  In practice a benchmark yields a small number of distinct sets; `--max-agent-groups`
+  bounds it if a run produces more than you want to pay for.
+- **Agent pools.** The math benchmarks and MMLU route over 15 role-based agents;
+  HumanEval routes over 13. Each pool is listed in its prompt set and its config.
+- **HumanEval splits.** HumanEval ships a single split, so graph optimization reuses the
+  evaluation set, as in the AgentDropout code this builds on. The run logs a note when it
+  does.
+- **Token accounting.** Every LLM call is attributed to the stage that made it — router,
+  optimization, fusion or inference — through a context variable, so the split survives the
+  concurrent fan-out of a graph run and needs no manual bookkeeping at call sites.
+- **Merge iterations.** `--merge-iterations n` performs `n` absorptions, each followed by
+  re-optimization of the restructured graph. The per-benchmark defaults are the depths in
+  [docs/RESULTS.md](docs/RESULTS.md) §7, declared on each `Benchmark` subclass.
 
 ## Acknowledgements
 
-The communication-graph MAS in `AgentDropout/` builds on
+The communication-graph MAS in `s2rmerge/mas/` builds on
 [AgentDropout](https://arxiv.org/abs/2503.18891) (ACL 2025) and, before it, AgentPrune.
 S2R-Merge replaces node *dropout* with absorption-based node *merge* and prepends the
 uncertainty-aware router.

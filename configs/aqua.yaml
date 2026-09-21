@@ -1,0 +1,163 @@
+# Router configuration for AQuA-RAT: algebraic word problems with five
+# lettered options.
+#
+# Role ids are the role names of s2rmerge.mas.prompts.aqua verbatim.
+
+name: aqua
+prototype_prefix: aqua
+
+stage0:
+  # v = alpha * Embed(q) + (1 - alpha) * Embed(t)
+  alpha: 0.5
+  embedding_model: "sentence-transformers/all-mpnet-base-v2"
+  llm_model: "Meta-Llama-3.1-8B-Instruct"
+
+  summary_prompt: |
+    Analyze the following multiple-choice mathematical problem and provide a structured summary. DO NOT solve the problem or provide the answer.
+    Your task is to identify what expertise and problem-solving strategies would be needed to solve this problem.
+
+    Problem: {question}
+
+    Provide a JSON response with exactly these fields:
+    {{
+      "task_format": "brief description of problem type (e.g., 'algebra', 'geometry', 'probability', 'word problem', 'rate-time-distance', 'percentage')",
+      "domain_hint": "primary mathematical domain (e.g., 'algebra', 'arithmetic', 'geometry', 'probability', 'optimization', 'word_problem')",
+      "key_concepts": ["2-3 specific mathematical concepts or topics involved"],
+      "routing_summary": "one sentence describing what type of expertise and problem-solving approach is needed"
+    }}
+
+    Remember: analyze the problem structure and required skills, do not solve it.
+
+stage1:
+  temperature_block: 0.1
+
+  lambda_prior: 0.5
+  domain_priors:
+    algebra:
+      Problem_Analysis: 0.25
+      Solution_Strategy: 0.25
+    arithmetic:
+      Problem_Analysis: 0.25
+      Calculation_Verification: 0.25
+    geometry:
+      Problem_Analysis: 0.25
+      Solution_Strategy: 0.25
+    probability:
+      Problem_Analysis: 0.25
+      Solution_Strategy: 0.25
+    word_problem:
+      Problem_Analysis: 0.3
+      Solution_Strategy: 0.25
+    optimization:
+      Solution_Strategy: 0.3
+      Calculation_Verification: 0.25
+    rate_time_distance:
+      Problem_Analysis: 0.25
+      Solution_Strategy: 0.25
+    percentage:
+      Problem_Analysis: 0.25
+      Calculation_Verification: 0.25
+
+  coverage:
+    rho_min: 0.30
+    rho_max: 0.80
+    tau: 0.5
+    kappa: 8.0
+
+  epsilon: 1.0e-10
+
+stage2:
+  temperature_role: 0.1
+
+  coverage:
+    rho_min_role: 0.30
+    rho_max_role: 0.75
+    tau_role: 0.5
+    kappa_role: 8.0
+
+  epsilon: 1.0e-10
+
+blocks:
+  Problem_Analysis:
+    description: >
+      Problem understanding, decomposition, pattern recognition and initial
+      analysis. Breaking down the statement, identifying the problem type and
+      understanding the constraints.
+    roles:
+      - Problem Decomposer
+      - Pattern Recognizer
+      - Visualizer
+      - Literal Translator
+      - Step-back Abstractionist
+
+  Solution_Strategy:
+    description: >
+      Solution design, logical reasoning, backward reasoning and strategic
+      planning. Deciding how to solve the problem and which method applies.
+    roles:
+      - Math Solver
+      - Mathematical Analyst
+      - Reverse Engineer
+      - Logical Critic
+      - Axiomatic Purist
+
+  Calculation_Verification:
+    description: >
+      Numerical computation, unit checking, edge-case testing and result
+      verification, including checking the answer against the offered options.
+    roles:
+      - Mathematical Analyst
+      - Unit Checker
+      - Edge Case Hunter
+      - Heuristic Estimator
+      - Inspector
+
+  Code_Implementation:
+    description: >
+      Programming-based solution. Translating the problem into code and
+      computing which option it yields.
+    roles:
+      - Programming Expert
+      - Mathematical Analyst
+
+role_descriptions:
+  Math Solver: >
+    Solves the problem directly and selects an option, using other agents'
+    choices as hints. The default for a straightforward problem.
+  Mathematical Analyst: >
+    Derives the solution symbolically, then substitutes the numbers and matches
+    the result to an option.
+  Programming Expert: >
+    Writes Python that computes the value and maps it onto an option. Suited to
+    heavy arithmetic.
+  Inspector: >
+    Checks another agent's reasoning and arithmetic before committing to an
+    option. A verifier rather than a first solver.
+  Problem Decomposer: >
+    Splits the problem into ordered sub-questions. Suited to long multi-step
+    algebra.
+  Pattern Recognizer: >
+    Identifies the standard problem type and applies the known method for it.
+  Reverse Engineer: >
+    Tests the offered options against the conditions rather than deriving the
+    answer forwards. Suited to multiple choice specifically.
+  Logical Critic: >
+    Looks for misreadings, traps and distractor options, then gives the sound
+    solution.
+  Visualizer: >
+    Describes the problem as a diagram, timeline or geometric scene. Suited to
+    spatial or temporal problems.
+  Axiomatic Purist: >
+    Derives the answer strictly from definitions and algebraic rules. Suited to
+    problems where rigour matters.
+  Unit Checker: >
+    Tracks units and dimensional consistency. Suited to problems mixing
+    measures.
+  Step-back Abstractionist: >
+    States the general principle the problem tests before applying the numbers.
+  Edge Case Hunter: >
+    Tests the chosen logic on extreme values to confirm it is robust.
+  Heuristic Estimator: >
+    Estimates the order of magnitude first and uses it to eliminate options.
+  Literal Translator: >
+    Translates each sentence into an equation and solves the resulting system.
